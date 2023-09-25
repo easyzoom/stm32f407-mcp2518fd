@@ -1,0 +1,5 @@
+/mcp2518fd/MDK-ARM/DebugConfig/*.dbgconf
+/mcp2518fd/MDK-ARM/mcp2518fd
+/mcp2518fd/MDK-ARM/RTE
+*.uvguix.*
+/mcp2518fd/MDK-ARM/*.lst
