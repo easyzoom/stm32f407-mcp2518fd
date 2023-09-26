@@ -31,6 +31,7 @@ int8_t DRV_SPI_TransferData(uint8_t spiSlaveDeviceIndex, uint8_t *SpiTxData, uin
 
 int8_t DRV_SPI_ChipSelectAssert(uint8_t spiSlaveDeviceIndex, bool assert);
 
+void mcp2518fd_transpond(void);
 //========================================================//
 #ifdef	__cplusplus
 }

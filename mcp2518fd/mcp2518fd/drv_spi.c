@@ -1,5 +1,23 @@
 #include "drv_spi.h"
 
+#define BIT(_x_) ((uint32_t)(1U) << (_x_))
+
+#define MTT_MAX_DATA_LEN 64
+#define CAN_FMT 0x80000000U	/*1= EXT/ 0 = STD */
+#define CAN_RTR 0x40000000U	/* RTR */
+#define CAN_ERR 0x20000000U	/* ERR/Data  message frame */
+
+struct canfd_frame {
+	uint32_t can_id;	/* FMT/RTR/ERR/ID */
+	uint8_t d_len;		/* data length */
+	uint8_t flags;		/* FD flags */
+	uint8_t resv0;
+	uint8_t resv1;
+	uint8_t data[MTT_MAX_DATA_LEN];
+	/* Any new structure entries should be placed below the comment */
+	uint32_t tstamp;
+};
+
 void DRV_SPI_Initialize(void)
 {
     DRV_CANFDSPI_Reset(DRV_CANFDSPI_INDEX_0);
@@ -103,3 +121,100 @@ int8_t DRV_SPI_TransferData(uint8_t spiSlaveDeviceIndex, uint8_t *SpiTxData, uin
 } 
 
 
+void mcp2518fd_transpond(void)
+{
+		CAN_RX_FIFO_EVENT rxFlags;
+		CAN_RX_MSGOBJ rxObj;
+		struct canfd_frame frame;
+		uint32_t rxif;
+		CAN_MODULE_EVENT eventflags;
+		CAN_ECC_EVENT eccflags;
+		CAN_RXCODE rxCode;
+
+		memset(&frame, 0, sizeof(frame));
+
+		DRV_CANFDSPI_ModuleEventGet(DRV_CANFDSPI_INDEX_0, &eventflags);
+		DRV_CANFDSPI_ReceiveEventGet(DRV_CANFDSPI_INDEX_0, &rxif);
+		DRV_CANFDSPI_ModuleEventRxCodeGet(DRV_CANFDSPI_INDEX_0, &rxCode);
+		// printf("rxif:%d, rxCode:%d\r\n",(int)rxif, (int)rxCode);
+		if ((!rxif) && (!rxCode)) {
+			printf("111eventflags:%d\r\n", eventflags);
+			printf("rxif:%d\r\n",(int)rxif);
+			DRV_CANFDSPI_ModuleEventRxCodeGet(DRV_CANFDSPI_INDEX_0, &rxCode);
+			printf("0000rxCode:%d\r\n", rxCode);
+			CAN_TXCODE txCode;
+			DRV_CANFDSPI_ModuleEventTxCodeGet(DRV_CANFDSPI_INDEX_0, &txCode);
+			printf("0000txCode:%d\r\n", txCode);
+			CAN_FILTER filterHit;
+			DRV_CANFDSPI_ModuleEventFilterHitGet(DRV_CANFDSPI_INDEX_0, &filterHit);
+			printf("0000filterHits:%d\r\n", filterHit);
+			CAN_ICODE icode;
+			DRV_CANFDSPI_ModuleEventIcodeGet(DRV_CANFDSPI_INDEX_0, &icode);
+			printf("0000icode:%d\r\n", icode);
+			CAN_CRC_EVENT crcflags;
+			DRV_CANFDSPI_CrcEventGet(DRV_CANFDSPI_INDEX_0, &crcflags);
+			printf("0000crcflags:%d\r\n", crcflags);
+			CAN_TEF_FIFO_EVENT tefflags;
+			DRV_CANFDSPI_TefEventGet(DRV_CANFDSPI_INDEX_0, &tefflags);
+			printf("0000tefflags:%d\r\n", tefflags);
+			DRV_CANFDSPI_ReceiveChannelEventGet(DRV_CANFDSPI_INDEX_0,CAN_FIFO_CH2, &rxFlags);
+			printf("0000rxFlags:%d\r\n", rxFlags);
+			DRV_CANFDSPI_ModuleEventGet(DRV_CANFDSPI_INDEX_0, &eventflags);
+			printf("2222eventflags:%d\r\n", eventflags);
+			uint32_t rxovif;
+			DRV_CANFDSPI_ReceiveEventOverflowGet(DRV_CANFDSPI_INDEX_0, &rxovif);
+			printf("0000rxovif:%d\r\n", rxovif);
+			uint8_t tec, rec;
+			CAN_ERROR_STATE flags;
+			DRV_CANFDSPI_ErrorCountStateGet(DRV_CANFDSPI_INDEX_0, &tec, &rec, &flags);
+			printf("tec:%d, rec:%d, flags:%d\r\n", tec, rec, flags);
+			CAN_BUS_DIAGNOSTIC bd;
+			DRV_CANFDSPI_BusDiagnosticsGet(DRV_CANFDSPI_INDEX_0, &bd);
+			printf("bd:%d\r\n", bd);
+			DRV_CANFDSPI_ReceiveChannelEventOverflowClear(DRV_CANFDSPI_INDEX_0, CAN_FIFO_CH2);
+			return;
+		}
+
+		int count, start;
+		for (count = 0, start = CAN_FIFO_CH2;
+			count < 1; count++, start++) {
+			if (rxif & BIT(start) || (rxCode == start)) {
+			// 	printf("BIT(start):%d\r\n",(int)BIT(start));
+				// DRV_CANFDSPI_ReceiveChannelEventGet(DRV_CANFDSPI_INDEX_0, start, &rxFlags);
+				// printf("111rxFlags:%d\r\n", rxFlags);
+				// if (rxFlags & CAN_RX_FIFO_NOT_EMPTY_EVENT) {
+					DRV_CANFDSPI_ReceiveMessageGetBulk(DRV_CANFDSPI_INDEX_0, start, &rxObj, &frame.data[0], MAX_DATA_BYTES);
+					if (rxObj.bF.ctrl.IDE) {
+						frame.can_id = (rxObj.bF.id.SID << 18) + rxObj.bF.id.EID;
+						frame.can_id |= CAN_FMT;
+					} else {
+						frame.can_id = rxObj.bF.id.SID;
+					}
+
+					// if (rxObj.bF.ctrl.ESI) {
+					// 	frame.flags |= CAN_ESI_FLAG;
+					// 	frame.can_id |= CAN_ERR;
+					// } else {
+					// 	frame.flags &= ~CAN_ESI_FLAG;
+					// 	frame.can_id &= ~CAN_ERR;
+					// }
+
+					// if (rxObj.bF.ctrl.RTR) {
+					// 	frame.can_id |= CAN_RTR;
+					// } else {
+					// 	frame.can_id &= ~CAN_RTR;
+					// }
+					// printf("\r\n Receive message's IDs = %x, DLC = %d, FLAG = %x\r\n", (unsigned int)frame.can_id, rxObj.bF.ctrl.DLC, frame.flags);
+					frame.d_len = DRV_CANFDSPI_DlcToDataBytes((CAN_DLC)rxObj.bF.ctrl.DLC);
+				// }
+				// DRV_CANFDSPI_ReceiveChannelEventGet(DRV_CANFDSPI_INDEX_0, start, &rxFlags);
+				// printf("222rxFlags:%d\r\n", rxFlags);
+			}
+		}
+		// DRV_CANFDSPI_ModuleEventGet(DRV_CANFDSPI_INDEX_0, &eventflags);
+		// printf("222eventflags:%d\r\n", eventflags);
+		// DRV_CANFDSPI_EccEventGet(DRV_CANFDSPI_INDEX_0, &eccflags);
+		// printf("eccflags:%d\r\n", eccflags);
+		DRV_CANFDSPI_EccEventClear(DRV_CANFDSPI_INDEX_0, CAN_ECC_ALL_EVENTS);
+		DRV_CANFDSPI_ModuleEventClear(DRV_CANFDSPI_INDEX_0, CAN_ALL_EVENTS);
+}

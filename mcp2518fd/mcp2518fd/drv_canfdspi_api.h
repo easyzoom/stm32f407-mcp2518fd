@@ -364,7 +364,9 @@ int8_t DRV_CANFDSPI_ReceiveChannelStatusGet(CANFDSPI_MODULE_ID index,
 int8_t DRV_CANFDSPI_ReceiveMessageGet(CANFDSPI_MODULE_ID index,
         CAN_FIFO_CHANNEL channel, CAN_RX_MSGOBJ* rxObj,
         uint8_t *rxd, uint8_t nBytes);
-
+int8_t DRV_CANFDSPI_ReceiveMessageGetBulk(CANFDSPI_MODULE_ID index,
+		CAN_FIFO_CHANNEL channel, CAN_RX_MSGOBJ* rxObj,
+		uint8_t *rxd, uint8_t nBytes);
 // *****************************************************************************
 //! Receive FIFO Reset
 

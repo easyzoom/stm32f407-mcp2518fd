@@ -1347,6 +1347,113 @@ int8_t DRV_CANFDSPI_ReceiveMessageGet(CANFDSPI_MODULE_ID index,
     //return spiTransferError;
 }
 
+int8_t DRV_CANFDSPI_ReceiveMessageGetBulk(CANFDSPI_MODULE_ID index,
+		CAN_FIFO_CHANNEL channel, CAN_RX_MSGOBJ* rxObj,
+		uint8_t *rxd, uint8_t nBytes)
+{
+	uint8_t n = 0;
+	uint8_t i = 0;
+	uint16_t a;
+	uint32_t fifoReg[3];
+	REG_CiFIFOCON ciFifoCon;
+	__attribute__((unused)) REG_CiFIFOSTA ciFifoSta;
+	REG_CiFIFOUA ciFifoUa;
+	int8_t spiTransferError = 0;
+
+	// Get FIFO registers
+	a = cREGADDR_CiFIFOCON + (channel * CiFIFO_OFFSET);
+
+	spiTransferError = DRV_CANFDSPI_ReadWordArray(index, a, fifoReg, 3);
+	if (spiTransferError) {
+		return -1;
+	}
+
+	// Check that it is a receive buffer
+	ciFifoCon.word = fifoReg[0];
+	if (ciFifoCon.txBF.TxEnable) {
+		return -2;
+	}
+
+	// Get Status
+	ciFifoSta.word = fifoReg[1];
+
+	// Get address
+	ciFifoUa.word = fifoReg[2];
+#ifdef USERADDRESS_TIMES_FOUR
+	a = 4 * ciFifoUa.bF.UserAddress;
+#else
+	a = ciFifoUa.bF.UserAddress;
+#endif
+	a += cRAMADDR_START;
+
+	// Number of bytes to read
+	n = nBytes + 8; // Add 8 header bytes
+
+	if (ciFifoCon.rxBF.RxTimeStampEnable) {
+		n += 4; // Add 4 time stamp bytes
+	}
+
+	// Make sure we read a multiple of 4 bytes from RAM
+	if (n % 4) {
+		n = n + 4 - (n % 4);
+	}
+
+	// Read rxObj using one access
+	uint8_t ba[MAX_MSG_SIZE];
+
+	if (n > MAX_MSG_SIZE) {
+		n = MAX_MSG_SIZE;
+	}
+
+	spiTransferError = DRV_CANFDSPI_ReadByteArray(index, a, ba, n);
+	if (spiTransferError) {
+		return -3;
+	}
+
+	// Assign message header
+	REG_t myReg;
+
+	myReg.byte[0] = ba[0];
+	myReg.byte[1] = ba[1];
+	myReg.byte[2] = ba[2];
+	myReg.byte[3] = ba[3];
+	rxObj->word[0] = myReg.word;
+
+	myReg.byte[0] = ba[4];
+	myReg.byte[1] = ba[5];
+	myReg.byte[2] = ba[6];
+	myReg.byte[3] = ba[7];
+	rxObj->word[1] = myReg.word;
+
+	if (ciFifoCon.rxBF.RxTimeStampEnable) {
+		myReg.byte[0] = ba[8];
+		myReg.byte[1] = ba[9];
+		myReg.byte[2] = ba[10];
+		myReg.byte[3] = ba[11];
+		rxObj->word[2] = myReg.word;
+
+		// Assign message data
+		for (i = 0; i < nBytes; i++) {
+			rxd[i] = ba[i + 12];
+		}
+	} else {
+		rxObj->word[2] = 0;
+
+		// Assign message data
+		for (i = 0; i < nBytes; i++) {
+			rxd[i] = ba[i + 8];
+		}
+	}
+
+	// UINC channel
+	spiTransferError = DRV_CANFDSPI_ReceiveChannelReset(index, channel);
+	if (spiTransferError) {
+		return -4;
+	}
+
+	return spiTransferError;
+}
+
 int8_t DRV_CANFDSPI_ReceiveChannelReset(CANFDSPI_MODULE_ID index,
         CAN_FIFO_CHANNEL channel)
 {
